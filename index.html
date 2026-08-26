@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MARS — Реестр объектов</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-top">
+          <a class="brand" href="#" aria-label="MARS">
+            <img class="brand-logo" src="assets/images/mars-logo.svg" alt="MARS" />
+            <span class="brand-caption">Система<br />мониторинга</span>
+          </a>
+          <button class="apps-button" aria-label="Все разделы"><i data-icon="grid"></i></button>
+        </div>
+
+        <nav class="menu" aria-label="Основное меню">
+          <a href="#"><i data-icon="hexagon"></i><span>Основные настройки</span></a>
+          <a href="#"><i data-icon="share-2"></i><span>Система</span></a>
+          <a href="#"><i data-icon="users"></i><span>Управление пользователями</span></a>
+          <a href="#"><i data-icon="bell"></i><span>Оповещения</span></a>
+          <a href="#"><i data-icon="flame"></i><span>Инциденты</span></a>
+          <a href="#"><i data-icon="refresh-cw"></i><span>Источники</span></a>
+          <a href="#"><i data-icon="shield"></i><span>Штормовой предел</span></a>
+          <a href="#"><i data-icon="log-in"></i><span>Перенаправление событий</span></a>
+          <a href="#"><i data-icon="git-branch"></i><span>Сбор данных</span></a>
+          <a class="active" href="#"><i data-icon="database"></i><span>Реестр объектов</span></a>
+          <a href="#"><i data-icon="book-open"></i><span>Журнал действий</span></a>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <div class="profile"><span class="avatar"></span><span>MARS Admin</span><i data-icon="log-out"></i></div>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="mobile-header"><button id="menuToggle" aria-label="Открыть меню"><i data-icon="menu"></i></button><span class="mobile-logo">MARS</span></header>
+        <section class="content-card">
+          <div class="page-heading">
+            <div><p class="eyebrow">Управление данными</p><h1>Реестр объектов</h1></div>
+          </div>
+
+          <div class="tabs" role="tablist" aria-label="Разделы реестра">
+            <button class="tab active" role="tab" aria-selected="true" data-tab="objects">Объекты <span class="count">0</span></button>
+            <button class="tab" role="tab" aria-selected="false" data-tab="types">Типы объектов <span class="count">0</span></button>
+            <!-- Вкладка «Атрибуты» отключена.
+            <button class="tab" role="tab" aria-selected="false" data-tab="attributes">Атрибуты <span class="count">0</span></button>
+            -->
+            <button class="tab" role="tab" aria-selected="false" data-tab="relations">Связи <span class="count">0</span></button>
+          </div>
+
+          <div class="toolbar">
+            <label class="search-field">
+              <i data-icon="search"></i>
+              <input id="searchInput" type="search" placeholder="Поиск по названию" autocomplete="off" />
+              <button id="clearSearch" aria-label="Очистить поиск"><i data-icon="x"></i></button>
+            </label>
+            <div class="type-filter-wrap is-inactive" id="objectTypeFilterWrap" aria-hidden="true"><button type="button" class="type-filter" id="objectTypeFilter" role="combobox" aria-label="Фильтр по типу объекта" aria-expanded="false" aria-controls="objectTypeFilterMenu" data-value="" disabled><span class="type-filter-prefix">Типы</span><span class="type-filter-value">Все</span><span class="type-filter-chevron">⌄</span></button><div class="type-filter-menu" id="objectTypeFilterMenu" hidden></div></div>
+            <button class="header-action type-add-button is-inactive" id="addTypeButton"><i data-icon="plus"></i><span>Добавить тип объекта</span></button>
+            <button class="header-action monitoring-add-button is-inactive" id="addMonitoringObject"><i data-icon="plus"></i><span>Добавить объект</span></button>
+            <button class="header-action tab-add-button" id="addButton" hidden><i data-icon="plus"></i><span>Добавить объект</span></button>
+          </div>
+
+          <section class="empty-state" id="emptyState" aria-live="polite">
+            <div class="empty-icon"><i data-icon="boxes"></i></div>
+            <h2 id="emptyTitle">Объекты ещё не добавлены</h2>
+            <p id="emptyText">Создайте первый объект, чтобы начать вести реестр.</p>
+            <button class="empty-action" id="emptyAddButton"><i data-icon="plus"></i><span>Добавить объект</span></button>
+          </section>
+          <!-- Табличное представление вкладки «Атрибуты» отключено.
+          <section class="attributes-list" id="attributesList" hidden>
+            <div class="list-head"><span>Название атрибута</span><span>Тип объекта</span><span>Сопоставление с CMDB</span><span></span></div>
+            <div id="attributesRows"></div>
+          </section>
+          -->
+          <section class="attributes-list" id="objectsList" hidden>
+            <div class="list-head objects-list-head"><span>Название объекта</span><span>Тип объекта</span></div>
+            <div id="objectsRows"></div>
+          </section>
+          <section class="attributes-list" id="typesList" hidden>
+            <div class="list-head type-list-head"><span>Название типа</span><span>Атрибуты</span><span>Коллекция КЕ в CMDB</span><span></span></div>
+            <div id="typesRows"></div>
+          </section>
+          <section class="attributes-list" id="relationsList" hidden><div class="list-head relation-list-head"><span>Первый тип</span><span>Атрибут</span><span>Второй тип</span><span>Атрибут</span></div><div id="relationsRows"></div></section>
+        </section>
+      </main>
+    </div>
+    <div class="toast" id="toast" role="status"><i data-icon="check"></i><span></span></div>
+    <div class="modal-backdrop" id="attributeModal" aria-hidden="true">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-header"><h2 id="modalTitle">Добавить атрибут</h2><button class="icon-button" id="closeModal" aria-label="Закрыть"><i data-icon="x"></i></button></div>
+        <form id="attributeForm" novalidate>
+          <label class="form-label">Название атрибута <b>*</b><input id="attributeName" name="name" placeholder="Например, IP-адрес" maxlength="120" required /><small class="error" id="nameError">Укажите название атрибута</small></label>
+          <label class="form-label">Тип объекта <span>Необязательно</span><select id="objectType" name="objectType"><option value="">Не выбран</option></select></label>
+          <div class="mapping-box"><button type="button" class="toggle-row" id="mappingToggle" role="switch" aria-checked="false" aria-controls="mappingFields" aria-expanded="false"><span class="toggle"></span><span>Сопоставление</span></button><p>Свяжите атрибут с полем коллекции в CMDB.</p><div class="mapping-fields" id="mappingFields" hidden><label class="form-label">Коллекция в CMDB <b>*</b><select id="galaxyCollection"><option value="">Выберите коллекцию</option></select><small class="error" id="collectionError">Выберите коллекцию в CMDB</small></label><label class="form-label">Атрибут в CMDB <b>*</b><select id="galaxyAttribute" disabled><option value="">Сначала выберите коллекцию</option></select><small class="error" id="galaxyAttributeError">Выберите атрибут в CMDB</small></label></div></div>
+          <div class="modal-actions"><button type="button" class="cancel-button" id="cancelModal">Отмена</button><button type="button" class="save-button" id="saveAttributeButton">Сохранить</button></div>
+        </form>
+      </section>
+    </div>
+    <div class="modal-backdrop" id="typeModal" aria-hidden="true">
+      <section class="modal type-form-modal" role="dialog" aria-modal="true" aria-labelledby="typeModalTitle">
+        <div class="modal-header"><h2 id="typeModalTitle">Добавить тип объекта</h2><button class="icon-button" type="button" id="closeTypeModal" aria-label="Закрыть"><i data-icon="x"></i></button></div>
+        <form id="typeForm" novalidate>
+          <label class="form-label"><span class="required-field-label">Название типа объектов <b>*</b></span><input id="typeName" name="typeName" placeholder="Например, Сервер" maxlength="120" required /><small class="error" id="typeNameError">Укажите название типа объектов</small></label>
+          <fieldset class="attribute-mode"><legend>Способ добавления атрибутов</legend><div class="attribute-mode-options" id="attributeModeOptions"><label data-mode="manual" for="attributeModeManual"><input id="attributeModeManual" type="radio" name="attributeMode" value="manual" checked /><span>Ручное добавление атрибутов</span></label><label data-mode="cmdb" for="attributeModeCmdb"><input id="attributeModeCmdb" type="radio" name="attributeMode" value="cmdb" /><span>Сопоставление атрибутов с коллекцией КЕ в CMDB</span></label></div></fieldset>
+          <div class="manual-attributes" id="manualAttributesSection"><div id="manualAttributeRows"></div><button type="button" class="add-attribute-button" id="addTypeAttribute">+ Добавить атрибут</button></div>
+          <div class="cmdb-fields" id="cmdbFields" hidden><label class="cmdb-section-title" for="cmdbCollectionInput">Коллекция в CMDB <b>*</b></label><div class="cmdb-collection-dropdown"><input class="cmdb-collection-input" id="cmdbCollectionInput" placeholder="Выберите коллекцию" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="cmdbCollectionOptions" /><div class="cmdb-collection-options" id="cmdbCollectionOptions" hidden></div></div><small class="error" id="cmdbCollectionError">Выберите коллекцию в CMDB</small><div id="cmdbAttributesBlock" hidden><div class="cmdb-attributes-header"><button type="button" id="cmdbAttributesToggle" aria-label="Свернуть или развернуть атрибуты" aria-expanded="true"><span class="cmdb-chevron">⌄</span></button></div><div id="cmdbAttributesContent"><div class="cmdb-attributes-list"><div class="cmdb-attributes-table-head"><label class="cmdb-select-all tooltip" data-tooltip="Использовать все атрибуты"><input type="checkbox" id="cmdbSelectAll" aria-label="Использовать все атрибуты" /></label><span class="cmdb-selected-count" id="cmdbSelectedCount" hidden></span></div><div id="cmdbAttributes"></div></div></div></div></div>
+          <div class="modal-actions"><button type="button" class="cancel-button" id="cancelTypeModal">Отмена</button><button type="button" class="save-button" id="saveTypeButton">Сохранить тип</button></div>
+        </form>
+      </section>
+    </div>
+    <div class="modal-backdrop" id="deleteAttributeModal" aria-hidden="true">
+      <section class="modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="deleteAttributeTitle">
+        <div class="modal-header"><h2 id="deleteAttributeTitle">Удалить атрибут?</h2><button class="icon-button" id="closeDeleteAttributeModal" aria-label="Закрыть"><i data-icon="x"></i></button></div>
+        <p id="deleteAttributeText">Атрибут будет удалён из реестра.</p>
+        <div class="modal-actions"><button type="button" class="cancel-button" id="cancelDeleteAttribute">Отмена</button><button type="button" class="danger-button" id="confirmDeleteAttribute">Удалить</button></div>
+      </section>
+    </div>
+    <div class="modal-backdrop" id="typeDetailsModal" aria-hidden="true">
+      <section class="modal type-details-modal" role="dialog" aria-modal="true" aria-labelledby="typeDetailsTitle"><div class="modal-header"><h2 id="typeDetailsTitle">Тип объекта</h2><button class="icon-button" id="closeTypeDetails" aria-label="Закрыть"><i data-icon="x"></i></button></div><div class="details-table"><div class="details-head" id="typeDetailsHead"></div><div id="typeDetailsRows"></div></div></section>
+    </div>
+    <div class="modal-backdrop" id="monitoringObjectModal" aria-hidden="true">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="monitoringObjectTitle"><div class="modal-header"><h2 id="monitoringObjectTitle">Добавить объект мониторинга</h2><button class="icon-button" id="closeMonitoringObject" aria-label="Закрыть"><i data-icon="x"></i></button></div><form id="monitoringObjectForm" novalidate><div id="monitoringObjectIdentity"><label class="form-label">Название объекта <b>*</b><input id="monitoringObjectName" maxlength="120" placeholder="Например, Production DB" /><small class="error" id="monitoringObjectNameError">Укажите название</small></label><label class="form-label">Тип объекта <b>*</b><select id="monitoringObjectType"><option value="">Выберите тип</option></select><small class="error" id="monitoringObjectTypeError">Выберите тип</small></label></div><div class="duplicate-notice" id="duplicateNotice" hidden><p>Объект с таким названием и типом уже существует.</p><button type="button" id="editExistingObject">Изменить существующий</button></div><div class="monitoring-card" id="monitoringObjectCard" hidden><h3 id="monitoringObjectCardTitle"></h3><div id="monitoringAttributeFields"></div></div><div class="modal-actions"><button type="button" class="cancel-button" id="cancelMonitoringObject">Отмена</button><button type="submit" class="save-button" id="continueMonitoringObject">Продолжить</button></div></form></section>
+    </div>
+    <div class="modal-backdrop" id="relationModal" aria-hidden="true"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="relationModalTitle"><div class="modal-header"><h2 id="relationModalTitle">Добавить связь</h2><button class="icon-button" id="closeRelationModal" aria-label="Закрыть"><i data-icon="x"></i></button></div><form id="relationForm" novalidate><label class="form-label">Первый тип объекта <b>*</b><select id="relationTypeFrom"><option value="">Выберите тип</option></select><small class="error" id="relationTypeFromError">Выберите тип</small></label><label class="form-label">Атрибут первого типа <b>*</b><select id="relationAttributeFrom" disabled><option value="">Сначала выберите тип</option></select><small class="error" id="relationAttributeFromError">Выберите атрибут</small></label><label class="form-label">Второй тип объекта <b>*</b><select id="relationTypeTo" disabled><option value="">Сначала выберите первый тип</option></select><small class="error" id="relationTypeToError">Выберите второй тип</small></label><label class="form-label">Атрибут второго типа <b>*</b><select id="relationAttributeTo" disabled><option value="">Сначала выберите тип</option></select><small class="error" id="relationAttributeToError">Выберите атрибут</small></label><div class="modal-actions"><button type="button" class="cancel-button" id="cancelRelationModal">Отмена</button><button type="submit" class="save-button">Сохранить связь</button></div></form></section></div>
+    <script src="script.js"></script>
+  </body>
+</html>
