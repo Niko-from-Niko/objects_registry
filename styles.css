@@ -952,6 +952,14 @@ h1 {
 .save-button:hover {
   background: #ff543b;
 }
+.save-button:disabled,
+.save-button:disabled:hover {
+  border-color: #454750;
+  color: #858791;
+  background: #34363d;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
 @media (max-width: 600px) {
   .list-head {
     display: none;
@@ -2109,7 +2117,20 @@ body {
   grid-template-columns: 1.2fr 1fr 1fr 1fr 1fr !important;
   gap: 16px;
   align-items: center;
+  min-width: 760px;
   padding: 0 16px;
+  box-sizing: border-box;
+}
+#relationsList {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.relation-list-head > *,
+.relation-row > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .relation-row {
   min-height: 48px;
@@ -2353,38 +2374,6 @@ body {
   color: #818392;
   font-size: 13px;
 }
-.cmdb-attributes-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 8px;
-}
-.cmdb-attributes-header > button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-width: 0;
-  flex: 1;
-  height: 40px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 8px;
-  color: #bebfc6;
-  background: #212226;
-  text-align: left;
-  font:
-    500 13px "Golos Text",
-    Arial,
-    sans-serif;
-  cursor: pointer;
-}
-.cmdb-chevron {
-  font-size: 17px;
-  transition: transform 0.2s;
-}
-.cmdb-attributes-header > button[aria-expanded="false"] .cmdb-chevron {
-  transform: rotate(-90deg);
-}
 .cmdb-select-all {
   position: relative;
   display: grid;
@@ -2480,6 +2469,7 @@ body {
   cursor: not-allowed;
 }
 .cmdb-attributes-list {
+  margin-top: 8px;
   max-height: 340px;
   overflow: auto;
   border: 1px solid #34363c;
@@ -2519,10 +2509,22 @@ body {
   accent-color: var(--accent);
   cursor: pointer;
 }
+.type-cmdb-toggle {
+  margin-top: 24px;
+}
 .manual-attributes {
   margin-top: 24px;
 }
+.manual-attributes-title {
+  margin: 0 0 12px;
+  color: #bebfc6;
+  font-size: 14px;
+  font-weight: 500;
+}
 .manual-attribute-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 8px;
   margin-bottom: 12px;
 }
 .manual-attribute-row input {
@@ -2539,10 +2541,33 @@ body {
     Arial,
     sans-serif;
 }
+.manual-attribute-delete {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid #4c4e58;
+  border-radius: 8px;
+  color: #ff654f;
+  background: transparent;
+  cursor: pointer;
+}
+.manual-attribute-delete:hover,
+.manual-attribute-delete:focus-visible {
+  border-color: #ff654f;
+  background: rgb(255 101 79 / 8%);
+  outline: 0;
+}
+.manual-attribute-delete svg {
+  width: 18px;
+  height: 18px;
+}
 .manual-attribute-row input:focus {
   border-color: #ff654f;
 }
 .manual-attribute-row small {
+  grid-column: 1 / -1;
   display: none;
   margin-top: 5px;
   color: #ff806f;
@@ -2580,24 +2605,44 @@ body {
 }
 .type-form-modal,
 .type-form-modal.has-attributes {
-  overflow: visible;
+  display: flex;
+  height: calc(100dvh - 48px);
+  max-height: calc(100dvh - 48px);
+  flex-direction: column;
+  overflow: hidden;
+}
+.type-form-modal .modal-header {
+  z-index: 5;
+  flex: 0 0 auto;
+  margin-bottom: 24px;
+  background: #1a1b1e;
+}
+#typeForm {
+  min-height: 0;
+  flex: 1 1 auto;
+  padding-right: 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 .cmdb-collection-dropdown.open-up .cmdb-collection-options {
   top: auto;
   bottom: calc(100% + 6px);
 }
 .type-form-modal.has-attributes .cmdb-attributes-list {
-  max-height: clamp(120px, calc(100vh - 540px), 340px);
+  max-height: 400px;
   overflow-y: auto;
 }
-.cmdb-attributes-header {
-  justify-content: flex-end;
-}
-.cmdb-attributes-header > button {
-  flex: 0 0 40px;
-  width: 40px;
-  padding: 0;
-  justify-content: center;
+@media (max-width: 520px) {
+  .type-form-modal,
+  .type-form-modal.has-attributes {
+    height: calc(100dvh - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+  #typeForm {
+    padding-right: 8px;
+  }
 }
 .cmdb-attributes-table-head {
   position: sticky;

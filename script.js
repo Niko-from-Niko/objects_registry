@@ -78,23 +78,55 @@ let active = "objects",
   expandedObjectTypeIds = new Set();
 function dbOpen() {
   return new Promise((ok, no) => {
-    let r = indexedDB.open("mars-object-registry", 6);
-    r.onupgradeneeded = () => {
-      let d = r.result,
-        tx = r.transaction;
-      ["attributes", "types", "monitoringObjects", "relations"].forEach(
-        (name) => {
-          if (d.objectStoreNames.contains(name)) tx.objectStore(name).clear();
-          else
-            d.createObjectStore(name, { keyPath: "id", autoIncrement: true });
-        },
-      );
-    };
-    r.onsuccess = () => {
-      db = r.result;
-      ok();
-    };
-    r.onerror = () => no(r.error);
+    const databaseName = "mars-object-registry-clean",
+      stores = ["attributes", "types", "monitoringObjects", "relations"],
+      configureUpgrade = (request) => {
+        request.onupgradeneeded = () => {
+          let database = request.result;
+          stores.forEach((name) => {
+            if (!database.objectStoreNames.contains(name))
+              database.createObjectStore(name, {
+                keyPath: "id",
+                autoIncrement: true,
+              });
+          });
+        };
+      },
+      finishOpen = (request) => {
+        request.onerror = () => no(request.error);
+        request.onblocked = () =>
+          no(new Error("Обновление локальной базы заблокировано"));
+        request.onsuccess = () => {
+          let database = request.result,
+            missingStore = stores.some(
+              (name) => !database.objectStoreNames.contains(name),
+            );
+          if (!missingStore) {
+            db = database;
+            ok();
+            return;
+          }
+          let nextVersion = database.version + 1;
+          database.close();
+          let upgradeRequest = indexedDB.open(databaseName, nextVersion);
+          configureUpgrade(upgradeRequest);
+          finishOpen(upgradeRequest);
+        };
+      },
+      request = indexedDB.open(databaseName);
+    configureUpgrade(request);
+    finishOpen(request);
+  });
+}
+function deletePreviousDatabase() {
+  return new Promise((ok, no) => {
+    try {
+      localStorage.removeItem("mars-object-registry-relations");
+    } catch {}
+    let request = indexedDB.deleteDatabase("mars-object-registry");
+    request.onsuccess = () => ok();
+    request.onerror = () => no(request.error);
+    request.onblocked = () => ok();
   });
 }
 function storeRequest(store, method, value) {
@@ -119,9 +151,23 @@ const getAll = () => getStoreItems("attributes"),
   updateType = (x) => storeRequest("types", "put", x),
   getMonitoringObjects = () => getStoreItems("monitoringObjects"),
   saveMonitoringObject = (x) =>
-    storeRequest("monitoringObjects", x.id ? "put" : "add", x),
-  getRelations = () => getStoreItems("relations"),
-  saveRelation = (x) => storeRequest("relations", "add", x);
+    storeRequest("monitoringObjects", x.id ? "put" : "add", x);
+async function ensureRelationsStore() {
+  if (db?.objectStoreNames.contains("relations")) return;
+  if (db) db.close();
+  db = null;
+  await dbOpen();
+  if (!db.objectStoreNames.contains("relations"))
+    throw new Error("Хранилище связей не создано");
+}
+async function getRelations() {
+  await ensureRelationsStore();
+  return getStoreItems("relations");
+}
+async function saveRelation(item) {
+  await ensureRelationsStore();
+  return storeRequest("relations", "add", item);
+}
 function normalizeCollectionName(name = "") {
   return name
     .replace(/\bIntegration\s*/gi, "")
@@ -185,6 +231,10 @@ function setErrors(entries) {
 }
 function submitForm(id) {
   $(id).dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+}
+function getSelectedOptionText(select) {
+  let option = select.options[select.selectedIndex];
+  return option ? option.textContent.trim() : "";
 }
 async function updateCounts() {
   let [objects, types, relations] = await Promise.all([
@@ -448,6 +498,32 @@ function syncMappingFields() {
 function isValidCmdbCustomName(value) {
   return /^[\x20-\x7E]*$/.test(value);
 }
+function syncTypeSaveButton() {
+  let cmdbEnabled =
+      $("cmdbMappingToggle").getAttribute("aria-checked") === "true",
+    manualInputs = [
+      ...$("manualAttributeRows").querySelectorAll("input"),
+    ],
+    manualAttributesValid = manualInputs.every(
+      (input) => input.value.trim() && isValidCmdbCustomName(input.value),
+    ),
+    hasValidManualAttributes =
+      manualInputs.length > 0 && manualAttributesValid,
+    selectedCmdbRows = [
+      ...$("cmdbAttributes").querySelectorAll(
+        '.cmdb-attribute-row:has(input[type="checkbox"]:checked)',
+      ),
+    ],
+    hasCmdbAttributes =
+      selectedCmdbRows.length > 0 &&
+      selectedCmdbRows.every((row) =>
+        isValidCmdbCustomName(row.querySelector(".cmdb-custom-name").value),
+      );
+  $("saveTypeButton").disabled =
+    cmdbEnabled
+      ? !hasCmdbAttributes || !manualAttributesValid
+      : !hasValidManualAttributes;
+}
 function validateCmdbCustomNames() {
   let valid = true;
   $("cmdbAttributes")
@@ -510,20 +586,22 @@ function renderCmdbAttributes(collection, selected = []) {
         customName.disabled = !checkbox.checked;
         row.classList.remove("invalid");
         syncCmdbSelectAll();
+        syncTypeSaveButton();
       };
-      customName.oninput = () =>
+      customName.oninput = () => {
         row.classList.toggle(
           "invalid",
           checkbox.checked && !isValidCmdbCustomName(customName.value),
         );
+        syncTypeSaveButton();
+      };
     });
   $("cmdbAttributesBlock").hidden = !collection;
   document
     .querySelector(".type-form-modal")
     .classList.toggle("has-attributes", !!collection);
-  $("cmdbAttributesContent").hidden = false;
-  $("cmdbAttributesToggle").setAttribute("aria-expanded", "true");
   syncCmdbSelectAll();
+  syncTypeSaveButton();
 }
 function hideCmdbCollectionOptions() {
   $("cmdbCollectionOptions").hidden = true;
@@ -637,6 +715,7 @@ function syncManualAttributeButton() {
       (input) => !input.value.trim() || !isValidCmdbCustomName(input.value),
     );
   $("addTypeAttribute").disabled = blocked;
+  syncTypeSaveButton();
 }
 function addManualAttribute(attribute = {}) {
   let id =
@@ -647,14 +726,21 @@ function addManualAttribute(attribute = {}) {
   row.innerHTML =
     '<input type="text" maxlength="120" value="' +
     esc(attribute.name || "") +
-    '" placeholder="Название атрибута в MARS"><small>Только латиница, цифры и спецсимволы</small>';
+    '" placeholder="Название атрибута в MARS"><button type="button" class="manual-attribute-delete" aria-label="Удалить атрибут" title="Удалить атрибут">' +
+    icon("trash") +
+    "</button><small>Только латиница, цифры и спецсимволы</small>";
   $("manualAttributeRows").append(row);
-  let input = row.querySelector("input");
+  let input = row.querySelector("input"),
+    deleteButton = row.querySelector(".manual-attribute-delete");
   input.oninput = () => {
     row.classList.toggle(
       "invalid",
       !!input.value && !isValidCmdbCustomName(input.value),
     );
+    syncManualAttributeButton();
+  };
+  deleteButton.onclick = () => {
+    row.remove();
     syncManualAttributeButton();
   };
   syncManualAttributeButton();
@@ -686,13 +772,18 @@ function getManualAttributes() {
   }));
 }
 function setAttributeMode(mode) {
-  document
-    .querySelectorAll('[name="attributeMode"]')
-    .forEach((input) => (input.checked = input.value === mode));
-  $("manualAttributesSection").hidden = mode !== "manual";
-  $("cmdbFields").hidden = mode !== "cmdb";
-  if (mode === "cmdb" && !$("cmdbCollectionInput").onfocus)
+  let cmdbEnabled = mode === "cmdb";
+  $("cmdbMappingToggle").setAttribute("aria-checked", String(cmdbEnabled));
+  $("cmdbMappingToggle").setAttribute("aria-expanded", String(cmdbEnabled));
+  $("manualAttributesSection").hidden = false;
+  $("manualAttributesTitle").textContent =
+    cmdbEnabled
+      ? "Дополнительные атрибуты"
+      : "Ручное добавление атрибутов";
+  $("cmdbFields").hidden = !cmdbEnabled;
+  if (cmdbEnabled && !$("cmdbCollectionInput").onfocus)
     renderCmdbCollections();
+  syncTypeSaveButton();
 }
 async function populateObjectTypes(selected = "") {
   let types = await getTypes();
@@ -904,7 +995,7 @@ function getTypeObjectFields(type) {
       label: attribute.nameRu || attribute.name,
     })),
     manual = (type.manualAttributes || []).map((attribute) => ({
-      key: attribute.id,
+      key: String(attribute.id),
       label: attribute.name,
     })),
     cmdb = (type.cmdbAttributes || []).map((attribute) =>
@@ -916,6 +1007,24 @@ function getTypeObjectFields(type) {
           },
     );
   return [...local, ...manual, ...cmdb];
+}
+function renderRelationAttributeOptions(type) {
+  let fields = type ? getTypeObjectFields(type) : [];
+  return (
+    '<option value="">' +
+    (fields.length ? "Выберите атрибут" : "У выбранного типа нет атрибутов") +
+    "</option>" +
+    fields
+      .map(
+        (field) =>
+          '<option value="' +
+          esc(field.key) +
+          '">' +
+          esc(field.label) +
+          "</option>",
+      )
+      .join("")
+  );
 }
 async function openEditType(id) {
   let type = (await getTypes()).find((x) => x.id === id);
@@ -1097,18 +1206,11 @@ $("mappingToggle").onclick = () => {
   syncMappingFields();
 };
 syncMappingFields();
-$("attributeModeOptions").onclick = (e) => {
-  let option = e.target.closest("[data-mode]");
-  if (!option) return;
-  e.preventDefault();
-  setAttributeMode(option.dataset.mode);
+$("cmdbMappingToggle").onclick = () => {
+  let enabled =
+    $("cmdbMappingToggle").getAttribute("aria-checked") === "true";
+  setAttributeMode(enabled ? "manual" : "cmdb");
 };
-document.querySelectorAll('[name="attributeMode"]').forEach(
-  (input) =>
-    (input.onchange = () => {
-      if (input.checked) setAttributeMode(input.value);
-    }),
-);
 $("cmdbSelectAll").onchange = () => {
   $("cmdbAttributes")
     .querySelectorAll(".cmdb-attribute-row")
@@ -1120,14 +1222,9 @@ $("cmdbSelectAll").onchange = () => {
       row.classList.remove("invalid");
     });
   syncCmdbSelectAll();
+  syncTypeSaveButton();
 };
 $("cmdbSelectAll").onclick = (e) => e.stopPropagation();
-$("cmdbAttributesToggle").onclick = () => {
-  let expanded =
-    $("cmdbAttributesToggle").getAttribute("aria-expanded") === "true";
-  $("cmdbAttributesToggle").setAttribute("aria-expanded", String(!expanded));
-  $("cmdbAttributesContent").hidden = expanded;
-};
 document.querySelector(".cmdb-collection-dropdown").onclick = (e) =>
   e.stopPropagation();
 $("addButton").onclick = openModal;
@@ -1230,10 +1327,10 @@ $("attributeForm").onsubmit = async (e) => {
 $("typeForm").onsubmit = async (e) => {
   e.preventDefault();
   let n = $("typeName").value.trim(),
-    mode = document.querySelector('[name="attributeMode"]:checked').value,
-    manualMode = mode === "manual",
-    manualValid = !manualMode || validateManualAttributes(),
-    manualAttributes = manualMode ? getManualAttributes() : [],
+    manualMode =
+      $("cmdbMappingToggle").getAttribute("aria-checked") !== "true",
+    manualValid = validateManualAttributes(),
+    manualAttributes = getManualAttributes(),
     cmdbCollection = $("cmdbCollectionInput").value,
     cmdbCollectionValid = Object.hasOwn(galaxy, cmdbCollection),
     cmdbCollectionAvailable =
@@ -1251,6 +1348,9 @@ $("typeForm").onsubmit = async (e) => {
         name: row.querySelector('input[type="checkbox"]').value,
         customName: row.querySelector(".cmdb-custom-name").value.trim(),
       }));
+  let hasAttributes = manualMode
+    ? manualAttributes.length > 0 && manualValid
+    : cmdbAttributes.length > 0;
   $("typeNameError").classList.toggle("visible", !n);
   $("cmdbCollectionError").textContent = !cmdbCollectionAvailable
     ? "Эта коллекция уже связана с другим типом объектов"
@@ -1262,6 +1362,7 @@ $("typeForm").onsubmit = async (e) => {
   if (
     !n ||
     !manualValid ||
+    !hasAttributes ||
     (!manualMode &&
       (!cmdbCollectionValid || !cmdbCollectionAvailable || !cmdbNamesValid))
   )
@@ -1377,7 +1478,6 @@ $("continueMonitoringObject").onclick = async (e) => {
     toast("Не удалось открыть карточку объекта");
   }
 };
-$("relationForm").querySelector(".save-button").textContent = "Сохранить";
 $("closeRelationModal").onclick = closeRelationModal;
 $("cancelRelationModal").onclick = () => {
   closeRelationModal();
@@ -1387,17 +1487,14 @@ $("relationModal").onclick = (e) =>
   e.target === $("relationModal") && closeRelationModal();
 $("relationTypeFrom").onchange = async (e) => {
   let types = await getTypes(),
-    type = types.find((x) => x.id === +e.target.value);
-  $("relationAttributeFrom").innerHTML =
-    '<option value="">Выберите атрибут</option>' +
-    (type?.attributes || [])
-      .map((x) => '<option value="' + x.id + '">' + esc(x.name) + "</option>")
-      .join("");
-  $("relationAttributeFrom").disabled = !type;
+    type = types.find((x) => String(x.id) === e.target.value);
+  $("relationAttributeFrom").innerHTML = renderRelationAttributeOptions(type);
+  $("relationAttributeFrom").disabled =
+    !type || !getTypeObjectFields(type).length;
   $("relationTypeTo").innerHTML =
     '<option value="">Выберите тип</option>' +
     types
-      .filter((x) => x.id !== type?.id)
+      .filter((x) => String(x.id) !== e.target.value)
       .map((x) => '<option value="' + x.id + '">' + esc(x.name) + "</option>")
       .join("");
   $("relationTypeTo").disabled = !type;
@@ -1406,56 +1503,80 @@ $("relationTypeFrom").onchange = async (e) => {
   $("relationAttributeTo").disabled = true;
 };
 $("relationTypeTo").onchange = async (e) => {
-  let type = (await getTypes()).find((x) => x.id === +e.target.value);
-  $("relationAttributeTo").innerHTML =
-    '<option value="">Выберите атрибут</option>' +
-    (type?.attributes || [])
-      .map((x) => '<option value="' + x.id + '">' + esc(x.name) + "</option>")
-      .join("");
-  $("relationAttributeTo").disabled = !type;
+  let type = (await getTypes()).find(
+    (x) => String(x.id) === e.target.value,
+  );
+  $("relationAttributeTo").innerHTML = renderRelationAttributeOptions(type);
+  $("relationAttributeTo").disabled =
+    !type || !getTypeObjectFields(type).length;
 };
-$("relationForm").onsubmit = async (e) => {
-  e.preventDefault();
+async function submitRelationForm(e) {
+  if (e) e.preventDefault();
   let name = $("relationName").value.trim(),
-    typeFrom = +$("relationTypeFrom").value,
-    attributeFrom = +$("relationAttributeFrom").value,
-    typeTo = +$("relationTypeTo").value,
-    attributeTo = +$("relationAttributeTo").value;
+    typeFrom = $("relationTypeFrom").value,
+    attributeFrom = $("relationAttributeFrom").value,
+    typeTo = $("relationTypeTo").value,
+    attributeTo = $("relationAttributeTo").value,
+    sameType = !!typeFrom && typeFrom === typeTo;
+  $("relationTypeToError").textContent = sameType
+    ? "Выберите другой тип объекта"
+    : "Выберите второй тип";
   setErrors([
     ["relationNameError", !name],
     ["relationTypeFromError", !typeFrom],
     ["relationAttributeFromError", !attributeFrom],
-    ["relationTypeToError", !typeTo],
+    ["relationTypeToError", !typeTo || sameType],
     ["relationAttributeToError", !attributeTo],
   ]);
-  if (!name || !typeFrom || !attributeFrom || !typeTo || !attributeTo) return;
-  let types = await getTypes(),
-    from = types.find((x) => x.id === typeFrom),
-    to = types.find((x) => x.id === typeTo),
-    fromAttribute = (from.attributes || []).find((x) => x.id === attributeFrom),
-    toAttribute = (to.attributes || []).find((x) => x.id === attributeTo);
+  if (
+    !name ||
+    !typeFrom ||
+    !attributeFrom ||
+    !typeTo ||
+    sameType ||
+    !attributeTo
+  ) {
+    toast("Заполните все поля связи и выберите разные типы объектов");
+    return;
+  }
   try {
-    await saveRelation({
+    let typeFromName = getSelectedOptionText($("relationTypeFrom")),
+      typeToName = getSelectedOptionText($("relationTypeTo")),
+      attributeFromName = getSelectedOptionText($("relationAttributeFrom")),
+      attributeToName = getSelectedOptionText($("relationAttributeTo"));
+    if (!typeFromName || !typeToName || !attributeFromName || !attributeToName)
+      throw new Error("Не удалось прочитать выбранные значения формы");
+    let savedId = await saveRelation({
       name,
       typeFrom,
-      typeFromName: from.name,
+      typeFromName,
       attributeFrom,
-      attributeFromName: fromAttribute.name,
+      attributeFromName,
       typeTo,
-      typeToName: to.name,
+      typeToName,
       attributeTo,
-      attributeToName: toAttribute.name,
+      attributeToName,
     });
+    let saved = (await getRelations()).some(
+      (relation) => String(relation.id) === String(savedId),
+    );
+    if (!saved) throw new Error("Запись не найдена после сохранения");
     closeRelationModal();
     await renderRelations();
     await updateCounts();
     toast("Связь сохранена");
   } catch (err) {
     console.error(err);
-    toast("Не удалось сохранить связь");
+    toast(
+      "Не удалось сохранить связь: " +
+        (err?.message || err?.name || "ошибка локальной базы"),
+    );
   }
-};
-dbOpen()
+}
+$("relationForm").onsubmit = submitRelationForm;
+$("saveRelationButton").onclick = submitRelationForm;
+deletePreviousDatabase()
+  .then(dbOpen)
   .then(async () => {
     await migrateCollectionNames();
     await repairAttributeTypeLinks();

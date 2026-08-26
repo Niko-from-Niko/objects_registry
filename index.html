@@ -10,7 +10,7 @@
     <meta http-equiv="Expires" content="0" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MARS — Реестр объектов</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20260826-6" />
   </head>
   <body>
     <div class="app-shell">
@@ -309,39 +309,18 @@
               >Укажите название типа объектов</small
             ></label
           >
-          <fieldset class="attribute-mode">
-            <legend>Способ добавления атрибутов</legend>
-            <div class="attribute-mode-options" id="attributeModeOptions">
-              <label data-mode="manual" for="attributeModeManual"
-                ><input
-                  id="attributeModeManual"
-                  type="radio"
-                  name="attributeMode"
-                  value="manual"
-                  checked
-                /><span>Ручное добавление атрибутов</span></label
-              ><label data-mode="cmdb" for="attributeModeCmdb"
-                ><input
-                  id="attributeModeCmdb"
-                  type="radio"
-                  name="attributeMode"
-                  value="cmdb"
-                /><span
-                  >Сопоставление атрибутов с коллекцией КЕ в CMDB</span
-                ></label
-              >
-            </div>
-          </fieldset>
-          <div class="manual-attributes" id="manualAttributesSection">
-            <div id="manualAttributeRows"></div>
-            <button
-              type="button"
-              class="add-attribute-button"
-              id="addTypeAttribute"
-            >
-              + Добавить атрибут
-            </button>
-          </div>
+          <button
+            type="button"
+            class="toggle-row type-cmdb-toggle"
+            id="cmdbMappingToggle"
+            role="switch"
+            aria-checked="false"
+            aria-controls="cmdbFields"
+            aria-expanded="false"
+          >
+            <span class="toggle"></span
+            ><span>Сопоставление атрибутов с коллекцией КЕ в CMDB</span>
+          </button>
           <div class="cmdb-fields" id="cmdbFields" hidden>
             <label class="cmdb-section-title" for="cmdbCollectionInput"
               >Коллекция в CMDB <b>*</b></label
@@ -366,42 +345,48 @@
               >Выберите коллекцию в CMDB</small
             >
             <div id="cmdbAttributesBlock" hidden>
-              <div class="cmdb-attributes-header">
-                <button
-                  type="button"
-                  id="cmdbAttributesToggle"
-                  aria-label="Свернуть или развернуть атрибуты"
-                  aria-expanded="true"
-                >
-                  <span class="cmdb-chevron">⌄</span>
-                </button>
-              </div>
-              <div id="cmdbAttributesContent">
-                <div class="cmdb-attributes-list">
-                  <div class="cmdb-attributes-table-head">
-                    <label
-                      class="cmdb-select-all tooltip"
-                      data-tooltip="Использовать все атрибуты"
-                      ><input
-                        type="checkbox"
-                        id="cmdbSelectAll"
-                        aria-label="Использовать все атрибуты" /></label
-                    ><span
-                      class="cmdb-selected-count"
-                      id="cmdbSelectedCount"
-                      hidden
-                    ></span>
-                  </div>
-                  <div id="cmdbAttributes"></div>
+              <div class="cmdb-attributes-list">
+                <div class="cmdb-attributes-table-head">
+                  <label
+                    class="cmdb-select-all tooltip"
+                    data-tooltip="Использовать все атрибуты"
+                    ><input
+                      type="checkbox"
+                      id="cmdbSelectAll"
+                      aria-label="Использовать все атрибуты" /></label
+                  ><span
+                    class="cmdb-selected-count"
+                    id="cmdbSelectedCount"
+                    hidden
+                  ></span>
                 </div>
+                <div id="cmdbAttributes"></div>
               </div>
             </div>
+          </div>
+          <div class="manual-attributes" id="manualAttributesSection">
+            <h3 class="manual-attributes-title" id="manualAttributesTitle">
+              Ручное добавление атрибутов
+            </h3>
+            <div id="manualAttributeRows"></div>
+            <button
+              type="button"
+              class="add-attribute-button"
+              id="addTypeAttribute"
+            >
+              + Добавить атрибут
+            </button>
           </div>
           <div class="modal-actions">
             <button type="button" class="cancel-button" id="cancelTypeModal">
               Отмена</button
-            ><button type="button" class="save-button" id="saveTypeButton">
-              Сохранить тип
+            ><button
+              type="button"
+              class="save-button"
+              id="saveTypeButton"
+              disabled
+            >
+              Сохранить
             </button>
           </div>
         </form>
@@ -601,11 +586,17 @@
               id="cancelRelationModal"
             >
               Отмена</button
-            ><button type="submit" class="save-button">Сохранить связь</button>
+            ><button
+              type="button"
+              class="save-button"
+              id="saveRelationButton"
+            >
+              Сохранить
+            </button>
           </div>
         </form>
       </section>
     </div>
-    <script src="script.js?v=20260826-7"></script>
+    <script src="script.js?v=20260826-25"></script>
   </body>
 </html>
