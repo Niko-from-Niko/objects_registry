@@ -79,7 +79,8 @@ let active = "objects",
   editingMonitoringObjectId = null,
   duplicateMonitoringObject = null,
   expandedObjectTypeIds = new Set(),
-  pinnedTableActions = new WeakMap();
+  pinnedTableActions = new WeakMap(),
+  popupActionOwners = new WeakMap();
 function dbOpen() {
   return new Promise((ok, no) => {
     const databaseName = "mars-object-registry-clean",
@@ -258,19 +259,34 @@ function getSelectedOptionText(select) {
   let option = select.options[select.selectedIndex];
   return option ? option.textContent.trim() : "";
 }
-function toggleRowActions(button, popup, event) {
-  event.stopPropagation();
-  let opening = popup.hidden;
+function closeRowActions() {
   document.querySelectorAll(".actions-popup").forEach((item) => {
     item.hidden = true;
     item.classList.remove("fixed-actions-popup");
+    item.style.removeProperty("left");
+    item.style.removeProperty("top");
+    let owner = popupActionOwners.get(item);
+    if (owner?.isConnected) owner.append(item);
+    popupActionOwners.delete(item);
   });
   document
     .querySelectorAll(".more-button")
     .forEach((item) => item.setAttribute("aria-expanded", "false"));
-  popup.hidden = !opening;
-  button.setAttribute("aria-expanded", String(opening));
+}
+function toggleRowActions(button, popup, event) {
+  event.stopPropagation();
+  let opening = popup.hidden;
+  closeRowActions();
   if (!opening) return;
+  popup.hidden = false;
+  button.setAttribute("aria-expanded", "true");
+  let owner = popup.parentElement;
+  popupActionOwners.set(popup, owner);
+  popup.dataset.entityId =
+    button.closest("[data-id]")?.dataset.id ||
+    button.closest("[data-object-id]")?.dataset.objectId ||
+    "";
+  document.body.append(popup);
   popup.classList.add("fixed-actions-popup");
   let rect = button.getBoundingClientRect(),
     popupWidth = popup.offsetWidth,
@@ -317,9 +333,9 @@ function setupResizableGrid(header, rows, storageKey, minimums) {
       let action = grid.lastElementChild;
       if (!action) return;
       action.style.transform = "none";
+      action.style.left = "0px";
       let actionRect = action.getBoundingClientRect();
-      action.style.transform =
-        "translateX(" + (desiredRight - actionRect.right) + "px)";
+      action.style.left = desiredRight - actionRect.right + "px";
     });
   };
   let pinnedState = pinnedTableActions.get(scrollHost);
@@ -451,10 +467,12 @@ async function renderTypes() {
   $("typesList").hidden = !t.length;
   document.querySelector('[data-tab="types"] .count').textContent = all.length;
   document.querySelectorAll("#typesRows .more-button").forEach(
-    (button) =>
+    (button) => {
+      let popup = button.nextElementSibling;
       (button.onclick = (e) => {
-        toggleRowActions(button, button.nextElementSibling, e);
-      }),
+        toggleRowActions(button, popup, e);
+      });
+    },
   );
   setupResizableGrid(
     document.querySelector(".type-list-head"),
@@ -466,25 +484,28 @@ async function renderTypes() {
     (button) =>
       (button.onclick = (e) => {
         e.stopPropagation();
-        openEditType(+button.closest(".type-row").dataset.id);
+        let id = +button.closest(".actions-popup").dataset.entityId;
+        closeRowActions();
+        openEditType(id);
       }),
   );
   document.querySelectorAll('#typesRows [data-action="delete"]').forEach(
     (button) =>
       (button.onclick = async (e) => {
         e.stopPropagation();
-        let id = +button.closest(".type-row").dataset.id,
+        let id = +button.closest(".actions-popup").dataset.entityId,
           type = all.find((x) => x.id === id);
-        if (!confirm("Удалить тип «" + type.name + "»?")) return;
-        let r = db
-          .transaction("types", "readwrite")
-          .objectStore("types")
-          .delete(id);
-        r.onsuccess = async () => {
-          await renderTypes();
-          await updateCounts();
-          toast("Тип удалён");
-        };
+        closeRowActions();
+        openActionDelete(
+          "Удалить тип объекта?",
+          'Тип «' + type.name + '» будет удалён без возможности восстановления.',
+          async () => {
+            await storeRequest("types", "delete", id);
+            await renderTypes();
+            await updateCounts();
+            toast("Тип удалён");
+          },
+        );
       }),
   );
 }
@@ -606,10 +627,12 @@ async function renderObjects() {
     moreButton.onclick = (e) => toggleRowActions(moreButton, popup, e);
     row.querySelector('[data-action="edit"]').onclick = (e) => {
       e.stopPropagation();
+      closeRowActions();
       openEditMonitoringObject(object);
     };
     row.querySelector('[data-action="delete"]').onclick = (e) => {
       e.stopPropagation();
+      closeRowActions();
       openActionDelete(
         "Удалить объект мониторинга?",
         'Объект «' + object.name + '» будет удалён без возможности восстановления.',
@@ -703,10 +726,12 @@ async function renderRelations() {
     moreButton.onclick = (e) => toggleRowActions(moreButton, popup, e);
     row.querySelector('[data-action="edit"]').onclick = (e) => {
       e.stopPropagation();
+      closeRowActions();
       openEditRelation(relation);
     };
     row.querySelector('[data-action="delete"]').onclick = async (e) => {
       e.stopPropagation();
+      closeRowActions();
       openActionDelete(
         "Удалить связь?",
         'Связь «' + relation.name + '» будет удалена без возможности восстановления.',
@@ -1607,13 +1632,7 @@ document.addEventListener("click", () => {
   hideCmdbCollectionOptions();
   $("objectTypeFilterMenu").hidden = true;
   $("objectTypeFilter").setAttribute("aria-expanded", "false");
-  document.querySelectorAll(".actions-popup").forEach((x) => {
-    x.hidden = true;
-    x.classList.remove("fixed-actions-popup");
-  });
-  document
-    .querySelectorAll(".more-button")
-    .forEach((x) => x.setAttribute("aria-expanded", "false"));
+  closeRowActions();
 });
 $("closeTypeModal").onclick = closeTypeModal;
 $("cancelTypeModal").onclick = () => {
