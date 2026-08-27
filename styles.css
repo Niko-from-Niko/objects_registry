@@ -1248,48 +1248,6 @@ h1 {
   color: #aeb3be;
   font-size: 12px;
 }
-.more-button {
-  width: 28px;
-  height: 28px;
-  border-radius: 5px;
-  color: #6e737f;
-}
-.more-button:hover,
-.more-button[aria-expanded="true"] {
-  color: #fff;
-  background: #292c32;
-}
-.actions-popup {
-  top: -7px;
-  right: 36px;
-  width: 148px;
-  padding: 6px;
-  border-color: #30343a;
-  border-radius: 8px;
-  background: #23252b;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.48);
-}
-.actions-popup.fixed-actions-popup {
-  position: fixed;
-  z-index: 10000;
-  right: auto;
-  bottom: auto;
-}
-.actions-popup button {
-  height: 38px;
-  padding: 0 10px;
-  border-radius: 6px;
-  color: #f0f1f4;
-  font-size: 12px;
-}
-.actions-popup button.danger-action {
-  color: #ff6672;
-  background: #522027;
-}
-.actions-popup button.danger-action:hover {
-  background: #62242d;
-}
-
 /* Design system extracted from the SVG reference layouts. */
 :root {
   --bg: #0d0f11;
@@ -1518,35 +1476,6 @@ body {
 .attribute-row code {
   color: #818392;
   font-family: "Golos Text", Arial, sans-serif;
-}
-.more-button {
-  color: #5a5c67;
-}
-.more-button:hover,
-.more-button[aria-expanded="true"] {
-  color: #fff;
-  background: #2f3137;
-}
-.actions-popup {
-  width: 148px;
-  padding: 6px;
-  border: 0;
-  border-radius: 8px;
-  background: #212226;
-}
-.actions-popup button {
-  color: #fff;
-  font-weight: 400;
-}
-.actions-popup button:hover {
-  background: #2f3137;
-}
-.actions-popup button.danger-action {
-  color: #ff6672;
-  background: #441d25;
-}
-.actions-popup button.danger-action:hover {
-  background: #52222b;
 }
 .modal-backdrop {
   padding: 24px;
@@ -2336,6 +2265,12 @@ body {
   background: #1d2025;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
 }
+.actions-popup.fixed-actions-popup {
+  position: fixed;
+  z-index: 10000;
+  right: auto;
+  bottom: auto;
+}
 .actions-popup[hidden] {
   display: none;
 }
@@ -2361,6 +2296,10 @@ body {
 }
 .actions-popup button.danger-action {
   color: #ff7765;
+  background: #441d25;
+}
+.actions-popup button.danger-action:hover {
+  background: #52222b;
 }
 .actions-popup svg {
   width: 15px;

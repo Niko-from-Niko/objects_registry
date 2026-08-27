@@ -282,10 +282,6 @@ function toggleRowActions(button, popup, event) {
   button.setAttribute("aria-expanded", "true");
   let owner = popup.parentElement;
   popupActionOwners.set(popup, owner);
-  popup.dataset.entityId =
-    button.closest("[data-id]")?.dataset.id ||
-    button.closest("[data-object-id]")?.dataset.objectId ||
-    "";
   document.body.append(popup);
   popup.classList.add("fixed-actions-popup");
   let rect = button.getBoundingClientRect(),
@@ -434,6 +430,38 @@ function icon(name) {
     "</svg>"
   );
 }
+function renderRowActions(extraClass = "") {
+  return (
+    '<div class="row-actions' +
+    (extraClass ? " " + extraClass : "") +
+    '"><button type="button" class="more-button" aria-label="Действия" aria-expanded="false">' +
+    icon("more") +
+    '</button><div class="actions-popup" hidden><button type="button" data-action="edit">' +
+    icon("edit") +
+    '<span>Изменить</span></button><button type="button" class="danger-action" data-action="delete">' +
+    icon("trash") +
+    "<span>Удалить</span></button></div></div>"
+  );
+}
+function bindRowActions(rows, resolveEntity, onEdit, onDelete) {
+  [...rows].forEach((row) => {
+    let entity = resolveEntity(row),
+      moreButton = row.querySelector(".more-button"),
+      popup = row.querySelector(".actions-popup");
+    moreButton.onclick = (event) =>
+      toggleRowActions(moreButton, popup, event);
+    row.querySelector('[data-action="edit"]').onclick = (event) => {
+      event.stopPropagation();
+      closeRowActions();
+      onEdit(entity, row);
+    };
+    row.querySelector('[data-action="delete"]').onclick = (event) => {
+      event.stopPropagation();
+      closeRowActions();
+      onDelete(entity, row);
+    };
+  });
+}
 async function renderTypes() {
   let all = await getTypes(),
     t = all.filter((x) =>
@@ -454,59 +482,35 @@ async function renderTypes() {
         ) +
         "</span><span>" +
         esc(x.cmdbCollection || "—") +
-        '</span><div class="row-actions"><button class="more-button" aria-label="Действия" aria-expanded="false">' +
-        icon("more") +
-        '</button><div class="actions-popup" hidden><button data-action="edit">' +
-        icon("edit") +
-        '<span>Изменить</span></button><button class="danger-action" data-action="delete">' +
-        icon("trash") +
-        "<span>Удалить</span></button></div></div></div>",
+        "</span>" +
+        renderRowActions() +
+        "</div>",
     )
     .join("");
   $("emptyState").hidden = !!t.length;
   $("typesList").hidden = !t.length;
   document.querySelector('[data-tab="types"] .count').textContent = all.length;
-  document.querySelectorAll("#typesRows .more-button").forEach(
-    (button) => {
-      let popup = button.nextElementSibling;
-      (button.onclick = (e) => {
-        toggleRowActions(button, popup, e);
-      });
-    },
-  );
   setupResizableGrid(
     document.querySelector(".type-list-head"),
     document.querySelectorAll("#typesRows .type-row"),
     "types",
     [180, 220, 220, 32],
   );
-  document.querySelectorAll('#typesRows [data-action="edit"]').forEach(
-    (button) =>
-      (button.onclick = (e) => {
-        e.stopPropagation();
-        let id = +button.closest(".actions-popup").dataset.entityId;
-        closeRowActions();
-        openEditType(id);
-      }),
-  );
-  document.querySelectorAll('#typesRows [data-action="delete"]').forEach(
-    (button) =>
-      (button.onclick = async (e) => {
-        e.stopPropagation();
-        let id = +button.closest(".actions-popup").dataset.entityId,
-          type = all.find((x) => x.id === id);
-        closeRowActions();
-        openActionDelete(
-          "Удалить тип объекта?",
-          'Тип «' + type.name + '» будет удалён без возможности восстановления.',
-          async () => {
-            await storeRequest("types", "delete", id);
-            await renderTypes();
-            await updateCounts();
-            toast("Тип удалён");
-          },
-        );
-      }),
+  bindRowActions(
+    document.querySelectorAll("#typesRows .type-row"),
+    (row) => all.find((type) => String(type.id) === row.dataset.id),
+    (type) => openEditType(type.id),
+    (type) =>
+      openActionDelete(
+        "Удалить тип объекта?",
+        'Тип «' + type.name + '» будет удалён без возможности восстановления.',
+        async () => {
+          await storeRequest("types", "delete", type.id);
+          await renderTypes();
+          await updateCounts();
+          toast("Тип удалён");
+        },
+      ),
   );
 }
 async function renderObjects() {
@@ -575,13 +579,7 @@ async function renderObjects() {
                     "</span>",
                 )
                 .join("") +
-              '<div class="row-actions object-row-actions"><button type="button" class="more-button" aria-label="Действия" aria-expanded="false">' +
-              icon("more") +
-              '</button><div class="actions-popup" hidden><button data-action="edit">' +
-              icon("edit") +
-              '<span>Изменить</span></button><button class="danger-action" data-action="delete">' +
-              icon("trash") +
-              "<span>Удалить</span></button></div></div>" +
+              renderRowActions("object-row-actions") +
               "</div>",
           )
           .join("") +
@@ -620,19 +618,11 @@ async function renderObjects() {
             requestAnimationFrame(() => pinnedTableActions.get(table)?.update());
         }),
     );
-  $("objectsRows").querySelectorAll(".object-type-table-row").forEach((row) => {
-    let object = all.find((item) => String(item.id) === row.dataset.objectId),
-      moreButton = row.querySelector(".more-button"),
-      popup = row.querySelector(".actions-popup");
-    moreButton.onclick = (e) => toggleRowActions(moreButton, popup, e);
-    row.querySelector('[data-action="edit"]').onclick = (e) => {
-      e.stopPropagation();
-      closeRowActions();
-      openEditMonitoringObject(object);
-    };
-    row.querySelector('[data-action="delete"]').onclick = (e) => {
-      e.stopPropagation();
-      closeRowActions();
+  bindRowActions(
+    $("objectsRows").querySelectorAll(".object-type-table-row"),
+    (row) => all.find((item) => String(item.id) === row.dataset.objectId),
+    openEditMonitoringObject,
+    (object) =>
       openActionDelete(
         "Удалить объект мониторинга?",
         'Объект «' + object.name + '» будет удалён без возможности восстановления.',
@@ -642,9 +632,8 @@ async function renderObjects() {
           await updateCounts();
           toast("Объект мониторинга удалён");
         },
-      );
-    };
-  });
+      ),
+  );
   $("emptyState").hidden = !!objects.length;
   $("objectsList").hidden = !objects.length;
   document.querySelector('[data-tab="objects"] .count').textContent =
@@ -702,13 +691,9 @@ async function renderRelations() {
         renderRelationSummary(x.parentRelations) +
         '</div><div class="relation-summary">' +
         renderRelationSummary(x.childRelations) +
-        '</div><div class="row-actions relation-row-actions"><button type="button" class="more-button" aria-label="Действия" aria-expanded="false">' +
-        icon("more") +
-        '</button><div class="actions-popup" hidden><button data-action="edit">' +
-        icon("edit") +
-        '<span>Изменить</span></button><button class="danger-action" data-action="delete">' +
-        icon("trash") +
-        "<span>Удалить</span></button></div></div></div>",
+        "</div>" +
+        renderRowActions("relation-row-actions") +
+        "</div>",
     )
     .join("");
   $("emptyState").hidden = !!relations.length;
@@ -719,19 +704,11 @@ async function renderRelations() {
     "relations",
     [180, 240, 220, 32],
   );
-  $("relationsRows").querySelectorAll(".relation-row").forEach((row) => {
-    let relation = all.find((item) => String(item.id) === row.dataset.id);
-    let moreButton = row.querySelector(".more-button"),
-      popup = row.querySelector(".actions-popup");
-    moreButton.onclick = (e) => toggleRowActions(moreButton, popup, e);
-    row.querySelector('[data-action="edit"]').onclick = (e) => {
-      e.stopPropagation();
-      closeRowActions();
-      openEditRelation(relation);
-    };
-    row.querySelector('[data-action="delete"]').onclick = async (e) => {
-      e.stopPropagation();
-      closeRowActions();
+  bindRowActions(
+    $("relationsRows").querySelectorAll(".relation-row"),
+    (row) => all.find((item) => String(item.id) === row.dataset.id),
+    openEditRelation,
+    (relation) =>
       openActionDelete(
         "Удалить связь?",
         'Связь «' + relation.name + '» будет удалена без возможности восстановления.',
@@ -741,9 +718,8 @@ async function renderRelations() {
           await updateCounts();
           toast("Связь удалена");
         },
-      );
-    };
-  });
+      ),
+  );
   document.querySelector('[data-tab="relations"] .count').textContent =
     all.length;
 }
@@ -1081,85 +1057,9 @@ function setAttributeMode(mode) {
     renderCmdbCollections();
   syncTypeSaveButton();
 }
-async function populateObjectTypes(selected = "") {
-  let types = await getTypes();
-  $("objectType").innerHTML =
-    '<option value="">Не выбран</option>' +
-    types
-      .map(
-        (x) =>
-          '<option value="' + esc(x.name) + '">' + esc(x.name) + "</option>",
-      )
-      .join("");
-  $("objectType").value = selected;
-}
-async function openEditAttribute(id) {
-  let item = (await getAll()).find((x) => x.id === id);
-  if (!item) return;
-  editingAttributeId = id;
-  $("modalTitle").textContent = "Изменить атрибут";
-  $("attributeName").value = item.name;
-  await populateObjectTypes(item.objectType || "");
-  let mapped = !!item.collection;
-  $("mappingToggle").setAttribute("aria-checked", String(mapped));
-  syncMappingFields();
-  $("galaxyCollection").value = item.collection || "";
-  $("galaxyCollection").dispatchEvent(new Event("change"));
-  $("galaxyAttribute").value = item.galaxyAttribute || "";
-  setModalOpen("attributeModal", true);
-  $("attributeName").focus();
-}
-async function openDeleteAttribute(id) {
-  let item = (await getAll()).find((x) => x.id === id);
-  if (!item) return;
-  deletingAttributeId = id;
-  $("deleteAttributeText").textContent =
-    "Атрибут «" + item.name + "» будет удалён из реестра.";
-  setModalOpen("deleteAttributeModal", true);
-}
 function closeDeleteAttribute() {
   setModalOpen("deleteAttributeModal", false);
   deletingAttributeId = null;
-}
-async function syncTypeAttributeAssignments(
-  typeId,
-  typeName,
-  selectedIds,
-  previousName = "",
-) {
-  let selected = new Set(selectedIds),
-    attributes = await getAll();
-  await Promise.all(
-    attributes.map((attribute) => {
-      let nextType = selected.has(attribute.id)
-        ? typeName
-        : attribute.objectType === previousName ||
-            attribute.objectType === typeName
-          ? ""
-          : attribute.objectType;
-      if ((attribute.objectType || "") === nextType) return Promise.resolve();
-      return updateAttribute({ ...attribute, objectType: nextType });
-    }),
-  );
-  let types = await getTypes();
-  await Promise.all(
-    types
-      .filter(
-        (type) =>
-          type.id !== typeId &&
-          (type.attributes || []).some((attribute) =>
-            selected.has(attribute.id),
-          ),
-      )
-      .map((type) =>
-        updateType({
-          ...type,
-          attributes: (type.attributes || []).filter(
-            (attribute) => !selected.has(attribute.id),
-          ),
-        }),
-      ),
-  );
 }
 async function repairAttributeTypeLinks() {
   let [types, attributes] = await Promise.all([getTypes(), getAll()]),
@@ -1333,40 +1233,6 @@ async function openEditType(id) {
   setAttributeMode(type.cmdbCollection ? "cmdb" : "manual");
   setModalOpen("typeModal", true);
 }
-async function openTypeDetails(id) {
-  let type = (await getTypes()).find((x) => x.id === id);
-  if (!type) return;
-  let fields = getTypeObjectFields(type),
-    objects = await getMonitoringObjects(),
-    rows = objects.filter((x) => x.typeId === id),
-    columns =
-      "minmax(190px,1.2fr) " + fields.map(() => "minmax(150px,1fr)").join(" ");
-  $("typeDetailsTitle").textContent = type.name;
-  $("typeDetailsHead").style.gridTemplateColumns = columns;
-  $("typeDetailsHead").innerHTML =
-    "<span>Объект мониторинга</span>" +
-    fields.map((field) => "<span>" + esc(field.label) + "</span>").join("");
-  $("typeDetailsRows").innerHTML = rows.length
-    ? rows
-        .map(
-          (object) =>
-            '<div class="details-row" style="grid-template-columns:' +
-            columns +
-            '"><strong>' +
-            esc(object.name) +
-            "</strong>" +
-            fields
-              .map(
-                (field) =>
-                  "<span>" + esc(object.values?.[field.key] || "—") + "</span>",
-              )
-              .join("") +
-            "</div>",
-        )
-        .join("")
-    : '<div class="details-empty">Объекты мониторинга этого типа ещё не добавлены.</div>';
-  setModalOpen("typeDetailsModal", true);
-}
 function closeTypeDetails() {
   setModalOpen("typeDetailsModal", false);
 }
@@ -1529,7 +1395,6 @@ function closeRelationModal() {
     .forEach((x) => x.classList.remove("visible"));
 }
 async function openModal() {
-  /* Ветка открытия формы вкладки «Атрибуты» отключена. */
   if (active === "types") {
     editingTypeId = null;
     $("typeModalTitle").textContent = "Добавить тип объекта";
