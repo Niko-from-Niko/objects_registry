@@ -10,7 +10,7 @@
     <meta http-equiv="Expires" content="0" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MARS — Реестр объектов</title>
-    <link rel="stylesheet" href="styles.css?v=20260826-6" />
+    <link rel="stylesheet" href="styles.css?v=20260827-14" />
   </head>
   <body>
     <div class="app-shell">
@@ -191,8 +191,8 @@
           </section>
           <section class="attributes-list" id="relationsList" hidden>
             <div class="list-head relation-list-head">
-              <span>Название</span><span>Первый тип</span><span>Атрибут</span
-              ><span>Второй тип</span><span>Атрибут</span>
+              <span>Название</span><span>Родительские связи</span
+              ><span>Дочерние связи</span><span></span>
             </div>
             <div id="relationsRows"></div>
           </section>
@@ -518,7 +518,7 @@
     </div>
     <div class="modal-backdrop" id="relationModal" aria-hidden="true">
       <section
-        class="modal"
+        class="modal relation-form-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="relationModalTitle"
@@ -546,39 +546,20 @@
               >Укажите название связи</small
             ></label
           >
-          <label class="form-label"
-            ><span class="required-field-label"
-              >Первый тип объекта <b>*</b></span
-            ><select id="relationTypeFrom">
-              <option value="">Выберите тип</option></select
-            ><small class="error" id="relationTypeFromError"
-              >Выберите тип</small
-            ></label
-          ><label class="form-label"
-            ><span class="required-field-label"
-              >Атрибут первого типа <b>*</b></span
-            ><select id="relationAttributeFrom" disabled>
-              <option value="">Сначала выберите тип</option></select
-            ><small class="error" id="relationAttributeFromError"
-              >Выберите атрибут</small
-            ></label
-          ><label class="form-label"
-            ><span class="required-field-label"
-              >Второй тип объекта <b>*</b></span
-            ><select id="relationTypeTo" disabled>
-              <option value="">Сначала выберите первый тип</option></select
-            ><small class="error" id="relationTypeToError"
-              >Выберите второй тип</small
-            ></label
-          ><label class="form-label"
-            ><span class="required-field-label"
-              >Атрибут второго типа <b>*</b></span
-            ><select id="relationAttributeTo" disabled>
-              <option value="">Сначала выберите тип</option></select
-            ><small class="error" id="relationAttributeToError"
-              >Выберите атрибут</small
-            ></label
-          >
+          <section class="relation-builder-section">
+            <h3>Родительские связи</h3>
+            <div class="relation-rules" id="parentRelationRules"></div>
+            <button type="button" class="add-attribute-button" id="addParentRelation">
+              + Добавить связь
+            </button>
+          </section>
+          <section class="relation-builder-section">
+            <h3>Дочерние связи</h3>
+            <div class="relation-rules" id="childRelationRules"></div>
+            <button type="button" class="add-attribute-button" id="addChildRelation">
+              + Добавить связь
+            </button>
+          </section>
           <div class="modal-actions">
             <button
               type="button"
@@ -597,6 +578,26 @@
         </form>
       </section>
     </div>
-    <script src="script.js?v=20260826-25"></script>
+    <div class="modal-backdrop" id="actionDeleteModal" aria-hidden="true">
+      <section
+        class="modal confirm-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="actionDeleteTitle"
+      >
+        <div class="modal-header">
+          <h2 id="actionDeleteTitle">Подтвердите удаление</h2>
+          <button class="icon-button" id="closeActionDelete" aria-label="Закрыть">
+            <i data-icon="x"></i>
+          </button>
+        </div>
+        <p id="actionDeleteText"></p>
+        <div class="modal-actions">
+          <button type="button" class="cancel-button" id="cancelActionDelete">Отмена</button
+          ><button type="button" class="danger-button" id="confirmActionDelete">Удалить</button>
+        </div>
+      </section>
+    </div>
+    <script src="script.js?v=20260827-13"></script>
   </body>
 </html>

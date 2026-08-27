@@ -67,15 +67,19 @@ const $ = (id) => document.getElementById(id),
     objects: ["Объекты", "объект"],
     types: ["Типы объектов", "тип объекта"],
     relations: ["Связи", "связь"],
-  };
+  },
+  routes = new Set(["objects", "types", "relations"]);
 let active = "objects",
   db,
   editingAttributeId = null,
   deletingAttributeId = null,
   editingTypeId = null,
+  editingRelationId = null,
+  pendingDeleteAction = null,
   editingMonitoringObjectId = null,
   duplicateMonitoringObject = null,
-  expandedObjectTypeIds = new Set();
+  expandedObjectTypeIds = new Set(),
+  pinnedTableActions = new WeakMap();
 function dbOpen() {
   return new Promise((ok, no) => {
     const databaseName = "mars-object-registry-clean",
@@ -168,6 +172,14 @@ async function saveRelation(item) {
   await ensureRelationsStore();
   return storeRequest("relations", "add", item);
 }
+async function updateRelation(item) {
+  await ensureRelationsStore();
+  return storeRequest("relations", "put", item);
+}
+async function deleteRelation(id) {
+  await ensureRelationsStore();
+  return storeRequest("relations", "delete", id);
+}
 function normalizeCollectionName(name = "") {
   return name
     .replace(/\bIntegration\s*/gi, "")
@@ -224,6 +236,16 @@ function setModalOpen(id, open) {
   $(id).classList.toggle("open", open);
   $(id).setAttribute("aria-hidden", String(!open));
 }
+function openActionDelete(title, text, action) {
+  $("actionDeleteTitle").textContent = title;
+  $("actionDeleteText").textContent = text;
+  pendingDeleteAction = action;
+  setModalOpen("actionDeleteModal", true);
+}
+function closeActionDelete() {
+  pendingDeleteAction = null;
+  setModalOpen("actionDeleteModal", false);
+}
 function setErrors(entries) {
   entries.forEach(([id, visible]) =>
     $(id).classList.toggle("visible", visible),
@@ -235,6 +257,146 @@ function submitForm(id) {
 function getSelectedOptionText(select) {
   let option = select.options[select.selectedIndex];
   return option ? option.textContent.trim() : "";
+}
+function toggleRowActions(button, popup, event) {
+  event.stopPropagation();
+  let opening = popup.hidden;
+  document.querySelectorAll(".actions-popup").forEach((item) => {
+    item.hidden = true;
+    item.classList.remove("fixed-actions-popup");
+  });
+  document
+    .querySelectorAll(".more-button")
+    .forEach((item) => item.setAttribute("aria-expanded", "false"));
+  popup.hidden = !opening;
+  button.setAttribute("aria-expanded", String(opening));
+  if (!opening) return;
+  popup.classList.add("fixed-actions-popup");
+  let rect = button.getBoundingClientRect(),
+    popupWidth = popup.offsetWidth,
+    popupHeight = popup.offsetHeight,
+    top = rect.bottom + 4;
+  if (top + popupHeight > window.innerHeight - 8)
+    top = Math.max(8, rect.top - popupHeight - 4);
+  popup.style.left = Math.max(8, rect.right - popupWidth) + "px";
+  popup.style.top = top + "px";
+}
+function setupResizableGrid(header, rows, storageKey, minimums) {
+  if (!header) return;
+  header
+    .querySelectorAll(".column-resizer")
+    .forEach((handle) => handle.remove());
+  let cells = [...header.children],
+    rowList = [...rows],
+    stored;
+  try {
+    stored = JSON.parse(localStorage.getItem("table-widths:" + storageKey));
+  } catch (_) {
+    stored = null;
+  }
+  let hasStoredWidths =
+    Array.isArray(stored) && stored.length === cells.length;
+  let computed = getComputedStyle(header).gridTemplateColumns
+      .split(" ")
+      .map((value) => parseFloat(value)),
+    widths = cells.map((_, index) =>
+      Math.max(
+        minimums[index] || 160,
+        Number(hasStoredWidths && stored[index]) ||
+          computed[index] ||
+          minimums[index] ||
+          160,
+      ),
+    );
+  widths[widths.length - 1] = 32;
+  let scrollHost = header.parentElement;
+  const pinActionColumn = () => {
+    let hostRect = scrollHost.getBoundingClientRect(),
+      desiredRight = Math.min(hostRect.right, window.innerWidth) - 8;
+    rowList.forEach((grid) => {
+      let action = grid.lastElementChild;
+      if (!action) return;
+      action.style.transform = "none";
+      let actionRect = action.getBoundingClientRect();
+      action.style.transform =
+        "translateX(" + (desiredRight - actionRect.right) + "px)";
+    });
+  };
+  let pinnedState = pinnedTableActions.get(scrollHost);
+  if (!pinnedState) {
+    pinnedState = { update: pinActionColumn };
+    pinnedTableActions.set(scrollHost, pinnedState);
+    scrollHost.addEventListener("scroll", () => pinnedState.update(), {
+      passive: true,
+    });
+    new ResizeObserver(() => pinnedState.update()).observe(scrollHost);
+  } else pinnedState.update = pinActionColumn;
+  let hostWidth =
+      header.parentElement?.clientWidth ||
+      header.closest(".object-type-group")?.clientWidth ||
+      0,
+    occupied =
+      widths.reduce((sum, width) => sum + width, 0) +
+      16 * (widths.length - 1) +
+      32;
+  if (!hasStoredWidths && cells.length - 1 <= 5 && hostWidth) {
+    let dataBudget =
+        hostWidth - 32 - 16 * (widths.length - 1) - widths.at(-1),
+      minimumTotal = minimums
+        .slice(0, -1)
+        .reduce((sum, width) => sum + width, 0),
+      extra = Math.max(0, dataBudget - minimumTotal),
+      dataColumns = widths.length - 1;
+    widths = widths.map((width, index) =>
+      index === widths.length - 1
+        ? 32
+        : (minimums[index] || 160) + extra / dataColumns,
+    );
+    occupied =
+      widths.reduce((sum, width) => sum + width, 0) +
+      16 * (widths.length - 1) +
+      32;
+  }
+  if (!hasStoredWidths && hostWidth > occupied)
+    widths[widths.length - 2] += hostWidth - occupied;
+  const applyWidths = () => {
+    let template = widths.map((width) => Math.round(width) + "px").join(" "),
+      total = widths.reduce((sum, width) => sum + width, 0) + 16 * (widths.length - 1) + 32;
+    [header, ...rowList].forEach((element) => {
+      element.style.setProperty("grid-template-columns", template, "important");
+      element.style.width = "max-content";
+      element.style.minWidth = "max(100%, " + total + "px)";
+    });
+    pinActionColumn();
+  };
+  applyWidths();
+  cells.slice(0, -2).forEach((cell, index) => {
+    let handle = document.createElement("button");
+    handle.type = "button";
+    handle.className = "column-resizer";
+    handle.setAttribute("aria-label", "Изменить ширину колонки");
+    handle.onpointerdown = (event) => {
+      event.preventDefault();
+      handle.setPointerCapture(event.pointerId);
+      let startX = event.clientX,
+        startWidth = widths[index];
+      handle.classList.add("is-resizing");
+      handle.onpointermove = (moveEvent) => {
+        widths[index] = Math.max(
+          minimums[index] || 160,
+          startWidth + moveEvent.clientX - startX,
+        );
+        applyWidths();
+      };
+      handle.onpointerup = () => {
+        handle.classList.remove("is-resizing");
+        handle.onpointermove = null;
+        handle.onpointerup = null;
+        localStorage.setItem("table-widths:" + storageKey, JSON.stringify(widths));
+      };
+    };
+    cell.append(handle);
+  });
 }
 async function updateCounts() {
   let [objects, types, relations] = await Promise.all([
@@ -291,15 +453,14 @@ async function renderTypes() {
   document.querySelectorAll("#typesRows .more-button").forEach(
     (button) =>
       (button.onclick = (e) => {
-        e.stopPropagation();
-        let popup = button.nextElementSibling,
-          opening = popup.hidden;
-        document
-          .querySelectorAll(".actions-popup")
-          .forEach((x) => (x.hidden = true));
-        popup.hidden = !opening;
-        button.setAttribute("aria-expanded", String(opening));
+        toggleRowActions(button, button.nextElementSibling, e);
       }),
+  );
+  setupResizableGrid(
+    document.querySelector(".type-list-head"),
+    document.querySelectorAll("#typesRows .type-row"),
+    "types",
+    [180, 220, 220, 32],
   );
   document.querySelectorAll('#typesRows [data-action="edit"]').forEach(
     (button) =>
@@ -352,7 +513,8 @@ async function renderObjects() {
         expanded = expandedObjectTypeIds.has(group.key),
         columns =
           "minmax(190px,1.2fr)" +
-          fields.map(() => " minmax(150px,1fr)").join("");
+          fields.map(() => " minmax(150px,1fr)").join("") +
+          " 32px";
       return (
         '<section class="object-type-group ' +
         (expanded ? "expanded" : "") +
@@ -372,11 +534,14 @@ async function renderObjects() {
         fields
           .map((field) => "<span>" + esc(field.label) + "</span>")
           .join("") +
+        "<span></span>" +
         "</div>" +
         group.objects
           .map(
             (object) =>
-              '<div class="object-type-table-row" style="grid-template-columns:' +
+              '<div class="object-type-table-row" data-object-id="' +
+              esc(object.id) +
+              '" style="grid-template-columns:' +
               columns +
               '"><strong>' +
               esc(object.name) +
@@ -389,6 +554,13 @@ async function renderObjects() {
                     "</span>",
                 )
                 .join("") +
+              '<div class="row-actions object-row-actions"><button type="button" class="more-button" aria-label="Действия" aria-expanded="false">' +
+              icon("more") +
+              '</button><div class="actions-popup" hidden><button data-action="edit">' +
+              icon("edit") +
+              '<span>Изменить</span></button><button class="danger-action" data-action="delete">' +
+              icon("trash") +
+              "<span>Удалить</span></button></div></div>" +
               "</div>",
           )
           .join("") +
@@ -396,6 +568,19 @@ async function renderObjects() {
       );
     })
     .join("");
+  $("objectsRows").querySelectorAll(".object-type-group").forEach((group) => {
+    let head = group.querySelector(".object-type-table-head"),
+      rows = group.querySelectorAll(".object-type-table-row"),
+      columnCount = head?.children.length || 0;
+    setupResizableGrid(
+      head,
+      rows,
+      "objects:" + group.dataset.typeKey,
+      Array.from({ length: columnCount }, (_, index) =>
+        index === columnCount - 1 ? 32 : index === 0 ? 190 : 180,
+      ),
+    );
+  });
   $("objectsRows")
     .querySelectorAll(".object-type-toggle")
     .forEach(
@@ -408,55 +593,141 @@ async function renderObjects() {
           else expandedObjectTypeIds.delete(key);
           group.classList.toggle("expanded", expanded);
           button.setAttribute("aria-expanded", String(expanded));
-          group.querySelector(".object-type-table").hidden = !expanded;
+          let table = group.querySelector(".object-type-table");
+          table.hidden = !expanded;
+          if (expanded)
+            requestAnimationFrame(() => pinnedTableActions.get(table)?.update());
         }),
     );
+  $("objectsRows").querySelectorAll(".object-type-table-row").forEach((row) => {
+    let object = all.find((item) => String(item.id) === row.dataset.objectId),
+      moreButton = row.querySelector(".more-button"),
+      popup = row.querySelector(".actions-popup");
+    moreButton.onclick = (e) => toggleRowActions(moreButton, popup, e);
+    row.querySelector('[data-action="edit"]').onclick = (e) => {
+      e.stopPropagation();
+      openEditMonitoringObject(object);
+    };
+    row.querySelector('[data-action="delete"]').onclick = (e) => {
+      e.stopPropagation();
+      openActionDelete(
+        "Удалить объект мониторинга?",
+        'Объект «' + object.name + '» будет удалён без возможности восстановления.',
+        async () => {
+          await storeRequest("monitoringObjects", "delete", object.id);
+          await renderObjects();
+          await updateCounts();
+          toast("Объект мониторинга удалён");
+        },
+      );
+    };
+  });
   $("emptyState").hidden = !!objects.length;
   $("objectsList").hidden = !objects.length;
   document.querySelector('[data-tab="objects"] .count').textContent =
     all.length;
   $("emptyAddButton").hidden = all.length > 0;
 }
+function renderRelationSummary(items = []) {
+  return items.length
+    ? items
+        .map(
+          (item) =>
+            '<span title="' +
+            esc(
+              item.typeFromName +
+                " · " +
+                item.attributeFromName +
+                " " +
+                item.operator +
+                " " +
+                item.typeToName +
+                " · " +
+                item.attributeToName,
+            ) +
+            '">' +
+            esc(item.typeFromName) +
+            " · " +
+            esc(item.attributeFromName) +
+            " " +
+            esc(item.operator) +
+            " " +
+            esc(item.typeToName) +
+            " · " +
+            esc(item.attributeToName) +
+            "</span>",
+        )
+        .join("")
+    : '<span class="relation-summary-empty">—</span>';
+}
 async function renderRelations() {
   let all = await getRelations(),
     query = $("searchInput").value.toLowerCase(),
     relations = all.filter((x) =>
-      (
-        (x.name || "") +
-        " " +
-        x.typeFromName +
-        " " +
-        x.attributeFromName +
-        " " +
-        x.typeToName +
-        " " +
-        x.attributeToName
-      )
+      ((x.name || "") + " " + JSON.stringify(x.parentRelations || []) + " " + JSON.stringify(x.childRelations || []))
         .toLowerCase()
         .includes(query),
     );
   $("relationsRows").innerHTML = relations
     .map(
       (x) =>
-        '<div class="relation-row"><strong>' +
+        '<div class="relation-row" data-id="' +
+        esc(x.id) +
+        '"><strong>' +
         esc(x.name || "—") +
-        "</strong><strong>" +
-        esc(x.typeFromName) +
-        "</strong><span>" +
-        esc(x.attributeFromName) +
-        "</span><strong>" +
-        esc(x.typeToName) +
-        "</strong><span>" +
-        esc(x.attributeToName) +
-        "</span></div>",
+        '</strong><div class="relation-summary">' +
+        renderRelationSummary(x.parentRelations) +
+        '</div><div class="relation-summary">' +
+        renderRelationSummary(x.childRelations) +
+        '</div><div class="row-actions relation-row-actions"><button type="button" class="more-button" aria-label="Действия" aria-expanded="false">' +
+        icon("more") +
+        '</button><div class="actions-popup" hidden><button data-action="edit">' +
+        icon("edit") +
+        '<span>Изменить</span></button><button class="danger-action" data-action="delete">' +
+        icon("trash") +
+        "<span>Удалить</span></button></div></div></div>",
     )
     .join("");
   $("emptyState").hidden = !!relations.length;
   $("relationsList").hidden = !relations.length;
+  setupResizableGrid(
+    document.querySelector(".relation-list-head"),
+    document.querySelectorAll("#relationsRows .relation-row"),
+    "relations",
+    [180, 240, 220, 32],
+  );
+  $("relationsRows").querySelectorAll(".relation-row").forEach((row) => {
+    let relation = all.find((item) => String(item.id) === row.dataset.id);
+    let moreButton = row.querySelector(".more-button"),
+      popup = row.querySelector(".actions-popup");
+    moreButton.onclick = (e) => toggleRowActions(moreButton, popup, e);
+    row.querySelector('[data-action="edit"]').onclick = (e) => {
+      e.stopPropagation();
+      openEditRelation(relation);
+    };
+    row.querySelector('[data-action="delete"]').onclick = async (e) => {
+      e.stopPropagation();
+      openActionDelete(
+        "Удалить связь?",
+        'Связь «' + relation.name + '» будет удалена без возможности восстановления.',
+        async () => {
+          await deleteRelation(relation.id);
+          await renderRelations();
+          await updateCounts();
+          toast("Связь удалена");
+        },
+      );
+    };
+  });
   document.querySelector('[data-tab="relations"] .count').textContent =
     all.length;
 }
-function tab(id) {
+function tab(id, updateRoute = true) {
+  if (!routes.has(id)) id = "objects";
+  if (updateRoute && location.hash !== "#" + id) {
+    location.hash = id;
+    return;
+  }
   active = id;
   let [p, s] = labels[id],
     typeFilter = $("objectTypeFilter"),
@@ -1076,6 +1347,7 @@ function closeTypeDetails() {
 }
 async function openMonitoringObject() {
   let types = await getTypes();
+  $("monitoringObjectTitle").textContent = "Добавить объект мониторинга";
   editingMonitoringObjectId = null;
   duplicateMonitoringObject = null;
   $("monitoringObjectForm").reset();
@@ -1091,10 +1363,19 @@ async function openMonitoringObject() {
   setModalOpen("monitoringObjectModal", true);
   $("monitoringObjectName").focus();
 }
+async function openEditMonitoringObject(object) {
+  if (!object) return;
+  await openMonitoringObject();
+  $("monitoringObjectTitle").textContent = "Изменить объект мониторинга";
+  $("monitoringObjectName").value = object.name || "";
+  $("monitoringObjectType").value = String(object.typeId || "");
+  await showMonitoringCard(object);
+}
 function closeMonitoringObject() {
   setModalOpen("monitoringObjectModal", false);
   editingMonitoringObjectId = null;
   duplicateMonitoringObject = null;
+  $("monitoringObjectTitle").textContent = "Добавить объект мониторинга";
 }
 async function showMonitoringCard(object = null) {
   let typeId = +$("monitoringObjectType").value,
@@ -1122,31 +1403,102 @@ async function showMonitoringCard(object = null) {
       .join("") || '<p class="details-empty">У этого типа нет атрибутов.</p>';
   $("continueMonitoringObject").textContent = "Сохранить";
 }
-async function openRelationModal() {
-  let types = await getTypes();
-  $("relationForm").reset();
-  $("relationTypeFrom").innerHTML =
+function relationTypeOptions(types, excludedId = "") {
+  return (
     '<option value="">Выберите тип</option>' +
     types
-      .map((x) => '<option value="' + x.id + '">' + esc(x.name) + "</option>")
-      .join("");
-  $("relationAttributeFrom").innerHTML =
-    '<option value="">Сначала выберите тип</option>';
-  $("relationTypeTo").innerHTML =
-    '<option value="">Сначала выберите первый тип</option>';
-  $("relationAttributeTo").innerHTML =
-    '<option value="">Сначала выберите тип</option>';
-  [
-    $("relationAttributeFrom"),
-    $("relationTypeTo"),
-    $("relationAttributeTo"),
-  ].forEach((x) => (x.disabled = true));
+      .filter((type) => String(type.id) !== excludedId)
+      .map(
+        (type) =>
+          '<option value="' +
+          esc(type.id) +
+          '">' +
+          esc(type.name) +
+          "</option>",
+      )
+      .join("")
+  );
+}
+async function addRelationRule(containerId, initial = {}) {
+  let types = await getTypes(),
+    row = document.createElement("div");
+  row.className = "relation-rule";
+  row.innerHTML =
+    '<label><span>Тип объекта</span><select class="relation-rule-type-from">' +
+    relationTypeOptions(types) +
+    '</select></label><label><span>Атрибут</span><select class="relation-rule-attribute-from" disabled><option value="">Сначала выберите тип</option></select></label>' +
+    '<label><span>Оператор</span><select class="relation-rule-operator"><option value="=" selected>=</option><option value="IN">IN</option></select></label>' +
+    '<label><span>Второй тип объекта</span><select class="relation-rule-type-to" disabled><option value="">Сначала выберите первый тип</option></select></label>' +
+    '<label><span>Атрибут</span><select class="relation-rule-attribute-to" disabled><option value="">Сначала выберите тип</option></select></label>' +
+    '<button type="button" class="relation-rule-delete" aria-label="Удалить связь" title="Удалить связь">' +
+    icon("trash") +
+    "</button>";
+  $(containerId).append(row);
+  let typeFrom = row.querySelector(".relation-rule-type-from"),
+    attributeFrom = row.querySelector(".relation-rule-attribute-from"),
+    typeTo = row.querySelector(".relation-rule-type-to"),
+    attributeTo = row.querySelector(".relation-rule-attribute-to");
+  typeFrom.onchange = () => {
+    let type = types.find((item) => String(item.id) === typeFrom.value);
+    attributeFrom.innerHTML = renderRelationAttributeOptions(type);
+    attributeFrom.disabled = !type || !getTypeObjectFields(type).length;
+    typeTo.innerHTML = type
+      ? relationTypeOptions(types, typeFrom.value)
+      : '<option value="">Сначала выберите первый тип</option>';
+    typeTo.disabled = !type;
+    attributeTo.innerHTML = '<option value="">Сначала выберите тип</option>';
+    attributeTo.disabled = true;
+    row.classList.remove("invalid");
+  };
+  typeTo.onchange = () => {
+    let type = types.find((item) => String(item.id) === typeTo.value);
+    attributeTo.innerHTML = renderRelationAttributeOptions(type);
+    attributeTo.disabled = !type || !getTypeObjectFields(type).length;
+    row.classList.remove("invalid");
+  };
+  row.querySelector(".relation-rule-delete").onclick = () => row.remove();
+  if (initial.typeFrom) {
+    typeFrom.value = String(initial.typeFrom);
+    typeFrom.onchange();
+    attributeFrom.value = String(initial.attributeFrom || "");
+    row.querySelector(".relation-rule-operator").value =
+      initial.operator || "=";
+    typeTo.value = String(initial.typeTo || "");
+    typeTo.onchange();
+    attributeTo.value = String(initial.attributeTo || "");
+  } else typeFrom.focus();
+}
+async function openRelationModal() {
+  editingRelationId = null;
+  $("relationModalTitle").textContent = "Добавить связь";
+  $("relationForm").reset();
+  $("parentRelationRules").innerHTML = "";
+  $("childRelationRules").innerHTML = "";
+  setModalOpen("relationModal", true);
+  $("relationName").focus();
+}
+async function openEditRelation(relation) {
+  if (!relation) return;
+  editingRelationId = relation.id;
+  $("relationForm").reset();
+  $("parentRelationRules").innerHTML = "";
+  $("childRelationRules").innerHTML = "";
+  $("relationModalTitle").textContent = "Изменить связь";
+  $("relationName").value = relation.name || "";
+  for (let item of relation.parentRelations || [])
+    await addRelationRule("parentRelationRules", item);
+  for (let item of relation.childRelations || [])
+    await addRelationRule("childRelationRules", item);
   setModalOpen("relationModal", true);
   $("relationName").focus();
 }
 function closeRelationModal() {
   setModalOpen("relationModal", false);
   $("relationForm").reset();
+  $("parentRelationRules").innerHTML = "";
+  $("childRelationRules").innerHTML = "";
+  editingRelationId = null;
+  $("relationModalTitle").textContent = "Добавить связь";
   $("relationForm")
     .querySelectorAll(".error")
     .forEach((x) => x.classList.remove("visible"));
@@ -1255,7 +1607,10 @@ document.addEventListener("click", () => {
   hideCmdbCollectionOptions();
   $("objectTypeFilterMenu").hidden = true;
   $("objectTypeFilter").setAttribute("aria-expanded", "false");
-  document.querySelectorAll(".actions-popup").forEach((x) => (x.hidden = true));
+  document.querySelectorAll(".actions-popup").forEach((x) => {
+    x.hidden = true;
+    x.classList.remove("fixed-actions-popup");
+  });
   document
     .querySelectorAll(".more-button")
     .forEach((x) => x.setAttribute("aria-expanded", "false"));
@@ -1410,6 +1765,16 @@ document.querySelectorAll(".tab").forEach(
       tab(b.dataset.tab);
     }),
 );
+window.addEventListener("hashchange", () => {
+  let route = location.hash.slice(1);
+  if (!routes.has(route)) {
+    history.replaceState(null, "", "#objects");
+    route = "objects";
+  }
+  $("searchInput").value = "";
+  document.querySelector(".search-field").classList.remove("has-value");
+  tab(route, false);
+});
 $("addTypeButton").onclick = openModal;
 $("addMonitoringObject").onclick = openMonitoringObject;
 $("emptyAddButton").onclick = () =>
@@ -1485,86 +1850,81 @@ $("cancelRelationModal").onclick = () => {
 };
 $("relationModal").onclick = (e) =>
   e.target === $("relationModal") && closeRelationModal();
-$("relationTypeFrom").onchange = async (e) => {
-  let types = await getTypes(),
-    type = types.find((x) => String(x.id) === e.target.value);
-  $("relationAttributeFrom").innerHTML = renderRelationAttributeOptions(type);
-  $("relationAttributeFrom").disabled =
-    !type || !getTypeObjectFields(type).length;
-  $("relationTypeTo").innerHTML =
-    '<option value="">Выберите тип</option>' +
-    types
-      .filter((x) => String(x.id) !== e.target.value)
-      .map((x) => '<option value="' + x.id + '">' + esc(x.name) + "</option>")
-      .join("");
-  $("relationTypeTo").disabled = !type;
-  $("relationAttributeTo").innerHTML =
-    '<option value="">Сначала выберите тип</option>';
-  $("relationAttributeTo").disabled = true;
-};
-$("relationTypeTo").onchange = async (e) => {
-  let type = (await getTypes()).find(
-    (x) => String(x.id) === e.target.value,
-  );
-  $("relationAttributeTo").innerHTML = renderRelationAttributeOptions(type);
-  $("relationAttributeTo").disabled =
-    !type || !getTypeObjectFields(type).length;
-};
+function collectRelationRules(containerId) {
+  let valid = true,
+    items = [...$(containerId).querySelectorAll(".relation-rule")].map(
+      (row) => {
+        let typeFrom = row.querySelector(".relation-rule-type-from"),
+          attributeFrom = row.querySelector(".relation-rule-attribute-from"),
+          operator = row.querySelector(".relation-rule-operator"),
+          typeTo = row.querySelector(".relation-rule-type-to"),
+          attributeTo = row.querySelector(".relation-rule-attribute-to"),
+          rowValid =
+            !!typeFrom.value &&
+            !!attributeFrom.value &&
+            !!typeTo.value &&
+            typeFrom.value !== typeTo.value &&
+            !!attributeTo.value;
+        row.classList.toggle("invalid", !rowValid);
+        if (!rowValid) valid = false;
+        return {
+          typeFrom: typeFrom.value,
+          typeFromName: getSelectedOptionText(typeFrom),
+          attributeFrom: attributeFrom.value,
+          attributeFromName: getSelectedOptionText(attributeFrom),
+          operator: operator.value,
+          typeTo: typeTo.value,
+          typeToName: getSelectedOptionText(typeTo),
+          attributeTo: attributeTo.value,
+          attributeToName: getSelectedOptionText(attributeTo),
+        };
+      },
+    );
+  return { valid, items };
+}
 async function submitRelationForm(e) {
   if (e) e.preventDefault();
   let name = $("relationName").value.trim(),
-    typeFrom = $("relationTypeFrom").value,
-    attributeFrom = $("relationAttributeFrom").value,
-    typeTo = $("relationTypeTo").value,
-    attributeTo = $("relationAttributeTo").value,
-    sameType = !!typeFrom && typeFrom === typeTo;
-  $("relationTypeToError").textContent = sameType
-    ? "Выберите другой тип объекта"
-    : "Выберите второй тип";
-  setErrors([
-    ["relationNameError", !name],
-    ["relationTypeFromError", !typeFrom],
-    ["relationAttributeFromError", !attributeFrom],
-    ["relationTypeToError", !typeTo || sameType],
-    ["relationAttributeToError", !attributeTo],
-  ]);
-  if (
-    !name ||
-    !typeFrom ||
-    !attributeFrom ||
-    !typeTo ||
-    sameType ||
-    !attributeTo
-  ) {
-    toast("Заполните все поля связи и выберите разные типы объектов");
+    parent = collectRelationRules("parentRelationRules"),
+    child = collectRelationRules("childRelationRules"),
+    hasRules = parent.items.length + child.items.length > 0;
+  setErrors([["relationNameError", !name]]);
+  if (!name || !hasRules || !parent.valid || !child.valid) {
+    toast(
+      !hasRules
+        ? "Добавьте хотя бы одну родительскую или дочернюю связь"
+        : "Заполните все поля добавленных связей",
+    );
     return;
   }
   try {
-    let typeFromName = getSelectedOptionText($("relationTypeFrom")),
-      typeToName = getSelectedOptionText($("relationTypeTo")),
-      attributeFromName = getSelectedOptionText($("relationAttributeFrom")),
-      attributeToName = getSelectedOptionText($("relationAttributeTo"));
-    if (!typeFromName || !typeToName || !attributeFromName || !attributeToName)
-      throw new Error("Не удалось прочитать выбранные значения формы");
-    let savedId = await saveRelation({
-      name,
-      typeFrom,
-      typeFromName,
-      attributeFrom,
-      attributeFromName,
-      typeTo,
-      typeToName,
-      attributeTo,
-      attributeToName,
-    });
-    let saved = (await getRelations()).some(
+    let isEdit = editingRelationId !== null,
+      record = {
+        name,
+        parentRelations: parent.items,
+        childRelations: child.items,
+      },
+      savedId;
+    if (isEdit) {
+      record.id = editingRelationId;
+      savedId = await updateRelation(record);
+    } else savedId = await saveRelation(record);
+    let saved = (await getRelations()).find(
       (relation) => String(relation.id) === String(savedId),
     );
     if (!saved) throw new Error("Запись не найдена после сохранения");
+    if (
+      saved.name !== record.name ||
+      JSON.stringify(saved.parentRelations || []) !==
+        JSON.stringify(record.parentRelations) ||
+      JSON.stringify(saved.childRelations || []) !==
+        JSON.stringify(record.childRelations)
+    )
+      throw new Error("Структура связи записана в базу не полностью");
     closeRelationModal();
     await renderRelations();
     await updateCounts();
-    toast("Связь сохранена");
+    toast(isEdit ? "Связь изменена" : "Связь сохранена");
   } catch (err) {
     console.error(err);
     toast(
@@ -1573,8 +1933,26 @@ async function submitRelationForm(e) {
     );
   }
 }
+$("addParentRelation").onclick = () =>
+  addRelationRule("parentRelationRules");
+$("addChildRelation").onclick = () => addRelationRule("childRelationRules");
 $("relationForm").onsubmit = submitRelationForm;
 $("saveRelationButton").onclick = submitRelationForm;
+$("closeActionDelete").onclick = closeActionDelete;
+$("cancelActionDelete").onclick = closeActionDelete;
+$("actionDeleteModal").onclick = (e) =>
+  e.target === $("actionDeleteModal") && closeActionDelete();
+$("confirmActionDelete").onclick = async () => {
+  let action = pendingDeleteAction;
+  closeActionDelete();
+  if (!action) return;
+  try {
+    await action();
+  } catch (err) {
+    console.error(err);
+    toast("Не удалось удалить запись");
+  }
+};
 deletePreviousDatabase()
   .then(dbOpen)
   .then(async () => {
@@ -1582,7 +1960,12 @@ deletePreviousDatabase()
     await repairAttributeTypeLinks();
     await syncAllTypeAttributesToRegistry();
     await updateCounts();
-    tab("objects");
+    let route = location.hash.slice(1);
+    if (!routes.has(route)) {
+      route = "objects";
+      history.replaceState(null, "", "#objects");
+    }
+    tab(route, false);
   })
   .catch((err) => {
     console.error(err);
